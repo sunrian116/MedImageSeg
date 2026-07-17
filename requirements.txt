@@ -1,0 +1,4 @@
+nnunetv2
+dicom2nifti
+SimpleITK
+numpy
