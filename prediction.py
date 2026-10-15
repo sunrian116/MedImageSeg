@@ -39,6 +39,7 @@ def predict(
     folds: list[int] | None = None,
     checkpoint: str = "checkpoint_best.pth",
     save_probabilities: bool = False,
+    config_name: str | None = None,
 ) -> None:
     """
     Run nnUNetv2 inference.
@@ -51,11 +52,16 @@ def predict(
     checkpoint         : checkpoint filename to load ("checkpoint_best.pth" or
                          "checkpoint_final.pth")
     save_probabilities : also save softmax probability maps (.npz)
+    config_name        : label configuration name; uses ACTIVE_CONFIG if None
     """
     set_nnunet_env()
 
-    input_dir  = input_dir  or config.IMAGES_TS
-    output_dir = output_dir or (config.DATA_DIR / "predictions")
+    # Get dataset paths and ID for the specified configuration
+    dataset_id = config.get_dataset_id_for_config(config_name) if config_name else config.DATASET_ID
+    dataset_paths = config.get_dataset_paths(config_name)
+    
+    input_dir  = input_dir  or dataset_paths["images_ts"]
+    output_dir = output_dir or (config.DATA_DIR / f"predictions_{config_name or config.ACTIVE_CONFIG}")
     folds      = folds      or config.FOLDS
 
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -64,7 +70,7 @@ def predict(
         "nnUNetv2_predict",
         "-i",  str(input_dir),
         "-o",  str(output_dir),
-        "-d",  str(config.DATASET_ID),
+        "-d",  str(dataset_id),
         "-c",  config.NNUNET_CONFIG,
         "-tr", config.TRAINER,
         "-chk", checkpoint,
@@ -136,13 +142,22 @@ def run(
     output_dir: Path | None = None,
     folds: list[int] | None = None,
     postprocess: bool = False,
+    config_name: str | None = None,
 ) -> None:
     """
     Full inference pipeline:
       1. Predict segmentation masks.
       2. (Optionally) apply post-processing.
+    
+    Parameters
+    ----------
+    input_dir   : folder with test images; defaults to dataset imagesTs
+    output_dir  : folder for predictions
+    folds       : which folds to use (default: all)
+    postprocess : apply post-processing after prediction
+    config_name : label configuration name; uses ACTIVE_CONFIG if None
     """
-    predict(input_dir=input_dir, output_dir=output_dir, folds=folds)
+    predict(input_dir=input_dir, output_dir=output_dir, folds=folds, config_name=config_name)
 
     if postprocess:
         apply_postprocessing()
@@ -162,6 +177,8 @@ if __name__ == "__main__":
                         help="Folds to use for prediction")
     parser.add_argument("--postprocess", action="store_true",
                         help="Apply post-processing after prediction")
+    parser.add_argument("--config", type=str, default=None,
+                        help=f"Label configuration to use (default: {config.ACTIVE_CONFIG})")
     args = parser.parse_args()
 
     run(
@@ -169,4 +186,5 @@ if __name__ == "__main__":
         output_dir=args.output,
         folds=args.folds,
         postprocess=args.postprocess,
+        config_name=args.config,
     )

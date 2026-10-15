@@ -24,17 +24,27 @@ import config
 # 1. Folder structure
 # ---------------------------------------------------------------------------
 
-def create_nnunet_folders() -> None:
-    """Create all directories required by nnUNet."""
+def create_nnunet_folders(config_name: str | None = None) -> None:
+    """
+    Create all directories required by nnUNet.
+    
+    Parameters
+    ----------
+    config_name : label configuration name; uses ACTIVE_CONFIG if None
+    """
+    paths = config.get_dataset_paths(config_name)
+    
     for folder in [
-        config.IMAGES_TR,
-        config.LABELS_TR,
-        config.IMAGES_TS,
+        paths["images_tr"],
+        paths["labels_tr"],
+        paths["images_ts"],
         config.NNUNET_PREPROCESSED,
         config.NNUNET_RESULTS,
     ]:
         folder.mkdir(parents=True, exist_ok=True)
-    print("[Preprocessing] nnUNet folder structure created.")
+    
+    dataset_name = paths["dataset_name"]
+    print(f"[Preprocessing] nnUNet folder structure created for dataset: {dataset_name}")
 
 
 # ---------------------------------------------------------------------------
@@ -118,7 +128,11 @@ def copy_label_to_nnunet(src: Path, case_id: str) -> None:
 # 4. dataset.json
 # ---------------------------------------------------------------------------
 
-def generate_dataset_json(json_path: Path | None = None, num_training: int | None = None) -> None:
+def generate_dataset_json(
+    json_path: Path | None = None,
+    num_training: int | None = None,
+    config_name: str | None = None,
+) -> None:
     """
     Write the nnUNet dataset.json file.
 
@@ -126,15 +140,36 @@ def generate_dataset_json(json_path: Path | None = None, num_training: int | Non
     ----------
     json_path     : destination path; defaults to <DATASET_RAW_DIR>/dataset.json
     num_training  : number of training cases; auto-counted if None
+    config_name   : label configuration name; uses ACTIVE_CONFIG if None
     """
-    json_path = json_path or (config.DATASET_RAW_DIR / "dataset.json")
+    # Get paths for the specified or active configuration
+    paths = config.get_dataset_paths(config_name)
+    default_json_path = paths["dataset_raw_dir"] / "dataset.json"
+    json_path = json_path or default_json_path
 
     if num_training is None:
-        num_training = len(list(config.IMAGES_TR.glob("*_0000.nii.gz")))
+        num_training = len(list(paths["images_tr"].glob("*_0000.nii.gz")))
+
+    # Get labels and channel names for the specified configuration
+    if config_name is not None:
+        if config_name not in config.LABEL_CONFIGS:
+            raise ValueError(
+                f"Invalid config_name '{config_name}'. "
+                f"Available: {list(config.LABEL_CONFIGS.keys())}"
+            )
+        active_config = config.LABEL_CONFIGS[config_name]
+        labels = active_config["labels"]
+        channel_names = active_config["channel_names"]
+        print(f"[Preprocessing] Using label configuration: '{config_name}' ({active_config['name']})")
+    else:
+        # Use the active configuration from config
+        labels = config.get_labels()
+        channel_names = config.get_channel_names()
+        print(f"[Preprocessing] Using active configuration: '{config.ACTIVE_CONFIG}'")
 
     dataset = {
-        "channel_names": config.CHANNEL_NAMES,
-        "labels":        config.LABELS,
+        "channel_names": channel_names,
+        "labels":        labels,
         "numTraining":   num_training,
         "file_ending":   config.FILE_ENDING,
         "overwrite_image_reader_writer": "SimpleITKIO",
@@ -149,19 +184,24 @@ def generate_dataset_json(json_path: Path | None = None, num_training: int | Non
 # 5. Convenience: run full preprocessing pipeline
 # ---------------------------------------------------------------------------
 
-def run(convert_dicoms: bool = True) -> None:
+def run(convert_dicoms: bool = True, config_name: str | None = None) -> None:
     """
     End-to-end preprocessing:
       1. Create folders
       2. (Optionally) convert DICOMs to NIfTI
       3. Generate dataset.json
+
+    Parameters
+    ----------
+    convert_dicoms : whether to convert DICOM files to NIfTI
+    config_name    : label configuration name; uses ACTIVE_CONFIG if None
     """
-    create_nnunet_folders()
+    create_nnunet_folders(config_name=config_name)
 
     if convert_dicoms:
         convert_all_dicoms()
 
-    generate_dataset_json()
+    generate_dataset_json(config_name=config_name)
     print("[Preprocessing] Done.")
 
 

@@ -38,18 +38,27 @@ def _run(cmd: list[str]) -> None:
 # Plan & preprocess
 # ---------------------------------------------------------------------------
 
-def plan_and_preprocess(verify_integrity: bool = True) -> None:
+def plan_and_preprocess(verify_integrity: bool = True, config_name: str | None = None) -> None:
     """
     Run nnUNetv2_plan_and_preprocess for the configured dataset.
 
     Parameters
     ----------
     verify_integrity : pass --verify_dataset_integrity to catch common errors
+    config_name      : label configuration name; uses ACTIVE_CONFIG if None
     """
     set_nnunet_env()
+    
+    # Get the dataset ID for the specified configuration
+    if config_name is not None:
+        dataset_id = config.get_dataset_id_for_config(config_name)
+        print(f"[Training] Using configuration: {config_name}")
+    else:
+        dataset_id = config.DATASET_ID
+    
     cmd = [
         "nnUNetv2_plan_and_preprocess",
-        "-d", str(config.DATASET_ID),
+        "-d", str(dataset_id),
         "-c", config.NNUNET_CONFIG,
     ]
     if verify_integrity:
@@ -62,32 +71,46 @@ def plan_and_preprocess(verify_integrity: bool = True) -> None:
 # Training
 # ---------------------------------------------------------------------------
 
-def train_fold(fold: int) -> None:
+def train_fold(fold: int, config_name: str | None = None) -> None:
     """
     Train a single cross-validation fold.
 
     Parameters
     ----------
-    fold : fold index (0-4)
+    fold        : fold index (0-4)
+    config_name : label configuration name; uses ACTIVE_CONFIG if None
     """
     set_nnunet_env()
+    
+    # Get the dataset ID for the specified configuration
+    if config_name is not None:
+        dataset_id = config.get_dataset_id_for_config(config_name)
+    else:
+        dataset_id = config.DATASET_ID
+    
     cmd = [
         "nnUNetv2_train",
-        str(config.DATASET_ID),
+        str(dataset_id),
         config.NNUNET_CONFIG,
         str(fold),
-        "--trainer", config.TRAINER,
+        "-tr", config.TRAINER,
     ]
     _run(cmd)
     print(f"[Training] Fold {fold} complete.")
 
 
-def train_all_folds() -> None:
-    """Train all folds defined in config.FOLDS sequentially."""
+def train_all_folds(config_name: str | None = None) -> None:
+    """
+    Train all folds defined in config.FOLDS sequentially.
+    
+    Parameters
+    ----------
+    config_name : label configuration name; uses ACTIVE_CONFIG if None
+    """
     set_nnunet_env()
     for fold in config.FOLDS:
         print(f"\n[Training] ===== Starting fold {fold} =====")
-        train_fold(fold)
+        train_fold(fold, config_name=config_name)
     print("[Training] All folds complete.")
 
 
@@ -114,18 +137,24 @@ def find_best_config() -> None:
 # Entry point
 # ---------------------------------------------------------------------------
 
-def run(folds: list[int] | None = None, preprocess: bool = True) -> None:
+def run(folds: list[int] | None = None, preprocess: bool = True, config_name: str | None = None) -> None:
     """
     Full training pipeline:
       1. Plan & preprocess (optional)
       2. Train specified folds (default: all folds in config)
+    
+    Parameters
+    ----------
+    folds       : specific folds to train; defaults to config.FOLDS
+    preprocess  : whether to run plan_and_preprocess
+    config_name : label configuration name; uses ACTIVE_CONFIG if None
     """
     if preprocess:
-        plan_and_preprocess()
+        plan_and_preprocess(config_name=config_name)
 
     folds = folds if folds is not None else config.FOLDS
     for fold in folds:
-        train_fold(fold)
+        train_fold(fold, config_name=config_name)
 
     print("[Training] Done.")
 
